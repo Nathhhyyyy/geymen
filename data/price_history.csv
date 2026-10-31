@@ -1,0 +1,11 @@
+stationId,stationName,address,distance,week1,week2,week3,week4,week5
+ST001,Shell Putik,Putik Zamboanga City,2500,5775,5800,5825,5850,5875
+ST002,Petron Tetuan,Tetuan Zamboanga City,1800,5750,5775,5800,5825,5850
+ST003,Caltex San Jose,San Jose Zamboanga City,3200,5800,5825,5850,5875,5900
+ST004,Phoenix Pasonanca,Pasonanca Zamboanga City,4100,5725,5750,5775,5800,5825
+ST005,Seaoil Baliwasan,Baliwasan Zamboanga City,1500,5780,5805,5830,5855,5880
+ST006,Total Canelar,Canelar Zamboanga City,2800,5760,5785,5810,5835,5860
+ST007,Flying V Sta. Cruz,Sta. Cruz Zamboanga City,2200,5790,5815,5840,5865,5890
+ST008,Unioil Tumaga,Tumaga Zamboanga City,3600,5740,5765,5790,5815,5840
+ST009,PTT Mercedes,Mercedes Zamboanga City,4500,5710,5735,5760,5785,5810
+ST010,Philippine Energy Divisoria,Divisoria Zamboanga City,1200,5755,5780,5805,5830,5855

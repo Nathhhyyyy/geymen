@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ZamboGas Live - Fuel Price Tracker</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1 class="title">⛽ ZamboGas Live</h1>
+            <p class="subtitle">Real-time Fuel Price Tracker for Zamboanga City</p>
+        </header>
+
+        <div class="controls-section">
+            <div class="control-group">
+                <label for="fuelType">Fuel Type</label>
+                <select id="fuelType" class="control-input">
+                    <option value="UNLEADED">Unleaded</option>
+                    <option value="PREMIUM">Premium</option>
+                    <option value="DIESEL">Diesel</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label for="liters">Liters</label>
+                <input type="number" id="liters" class="control-input" value="10" min="1" max="100">
+            </div>
+
+            <div class="control-group">
+                <label for="vehicleType">Vehicle</label>
+                <select id="vehicleType" class="control-input">
+                    <option value="motorcycle">Motorcycle (25 km/L)</option>
+                    <option value="tricycle">Tricycle (15 km/L)</option>
+                    <option value="car">Car (12 km/L)</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label for="sortMode">Sort Mode</label>
+                <select id="sortMode" class="control-input">
+                    <option value="CHEAPEST">Cheapest</option>
+                    <option value="NEAREST">Nearest</option>
+                    <option value="TRUE_COST">True Cost</option>
+                </select>
+            </div>
+
+            <button id="updateBtn" class="btn btn-primary">Update Prices</button>
+            <button id="sortBtn" class="btn btn-secondary">Sort Stations</button>
+        </div>
+
+        <div class="stats-bar">
+            <div class="stat-item">
+                <span class="stat-label">Stations:</span>
+                <span class="stat-value" id="stationCount">0</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Cheapest:</span>
+                <span class="stat-value" id="cheapestPrice">₱0.00</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Last Updated:</span>
+                <span class="stat-value" id="lastUpdated">Never</span>
+            </div>
+        </div>
+
+        <div class="stations-grid" id="stationsGrid">
+            <div class="loading-message">Click "Update Prices" to load station data</div>
+        </div>
+
+        <div class="visualizer-section">
+            <div class="visualizer-header">
+                <h2 class="visualizer-title">Radix Sort Visualizer</h2>
+                <div class="visualizer-controls">
+                    <button id="prevPass" class="btn btn-small" disabled>← Previous Pass</button>
+                    <span class="pass-indicator">Pass: <span id="currentPass">0</span> / <span id="totalPasses">0</span></span>
+                    <button id="nextPass" class="btn btn-small" disabled>Next Pass →</button>
+                    <button id="playBtn" class="btn btn-small" disabled>▶ Play</button>
+                    <button id="resetBtn" class="btn btn-small" disabled>↺ Reset</button>
+                </div>
+            </div>
+
+            <div class="buckets-container" id="bucketsContainer">
+                <div class="visualizer-placeholder">Sort stations to see radix sort visualization</div>
+            </div>
+
+            <div class="current-array-section">
+                <h3 class="section-title">Current Array State</h3>
+                <div class="array-display" id="arrayDisplay">
+                    <span class="array-placeholder">No data to display</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Vehicle efficiency presets (km per liter)
+        const vehicleEfficiency = {
+            motorcycle: 25,
+            tricycle: 15,
+            car: 12
+        };
+
+        // State
+        let stations = [];
+        let sortSnapshots = [];
+        let currentSnapshotIndex = 0;
+        let isPlaying = false;
+        let playInterval = null;
+
+        // DOM Elements
+        const fuelTypeSelect = document.getElementById('fuelType');
+        const litersInput = document.getElementById('liters');
+        const vehicleTypeSelect = document.getElementById('vehicleType');
+        const sortModeSelect = document.getElementById('sortMode');
+        const updateBtn = document.getElementById('updateBtn');
+        const sortBtn = document.getElementById('sortBtn');
+        const stationsGrid = document.getElementById('stationsGrid');
+        const stationCountEl = document.getElementById('stationCount');
+        const cheapestPriceEl = document.getElementById('cheapestPrice');
+        const lastUpdatedEl = document.getElementById('lastUpdated');
+        const bucketsContainer = document.getElementById('bucketsContainer');
+        const arrayDisplay = document.getElementById('arrayDisplay');
+        const currentPassEl = document.getElementById('currentPass');
+        const totalPassesEl = document.getElementById('totalPasses');
+        const prevPassBtn = document.getElementById('prevPass');
+        const nextPassBtn = document.getElementById('nextPass');
+        const playBtn = document.getElementById('playBtn');
+        const resetBtn = document.getElementById('resetBtn');
+
+        // Event Listeners
+        updateBtn.addEventListener('click', updatePrices);
+        sortBtn.addEventListener('click', sortStations);
+        prevPassBtn.addEventListener('click', showPreviousPass);
+        nextPassBtn.addEventListener('click', showNextPass);
+        playBtn.addEventListener('click', togglePlay);
+        resetBtn.addEventListener('click', resetVisualization);
+
+        async function updatePrices() {
+            updateBtn.disabled = true;
+            updateBtn.textContent = 'Updating...';
+            stationsGrid.innerHTML = '<div class="loading-message">Fetching latest prices...</div>';
+
+            try {
+                const response = await fetch('/api/update-prices', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    stations = data.stations;
+                    renderStations();
+                    updateStats();
+                    lastUpdatedEl.textContent = new Date().toLocaleString();
+                } else {
+                    stationsGrid.innerHTML = `<div class="error-message">Error: ${data.error}</div>`;
+                }
+            } catch (error) {
+                console.error('Error updating prices:', error);
+                stationsGrid.innerHTML = '<div class="error-message">Failed to fetch prices. Using mock data.</div>';
+                loadMockData();
+            }
+
+            updateBtn.disabled = false;
+            updateBtn.textContent = 'Update Prices';
+        }
+
+        function loadMockData() {
+            stations = [
+                { stationId: 'ST001', stationName: 'Shell Putik', address: 'Putik, Zamboanga City', distance: 2500, basePrice: 5875, trend: '▲', priceHistory: [5800, 5825, 5850, 5875, 5900] },
+                { stationId: 'ST002', stationName: 'Petron Tetuan', address: 'Tetuan, Zamboanga City', distance: 1800, basePrice: 5850, trend: '→', priceHistory: [5850, 5850, 5850, 5850, 5850] },
+                { stationId: 'ST003', stationName: 'Caltex San Jose', address: 'San Jose, Zamboanga City', distance: 3200, basePrice: 5900, trend: '▼', priceHistory: [5950, 5925, 5910, 5900, 5890] },
+                { stationId: 'ST004', stationName: 'Phoenix Pasonanca', address: 'Pasonanca, Zamboanga City', distance: 4100, basePrice: 5825, trend: '▲', priceHistory: [5750, 5775, 5800, 5825, 5850] },
+                { stationId: 'ST005', stationName: 'Seaoil Baliwasan', address: 'Baliwasan, Zamboanga City', distance: 1500, basePrice: 5850, trend: '→', priceHistory: [5840, 5845, 5848, 5850, 5850] },
+                { stationId: 'ST006', stationName: 'Total Canelar', address: 'Canelar, Zamboanga City', distance: 2800, basePrice: 5875, trend: '▲', priceHistory: [5800, 5825, 5850, 5875, 5900] },
+                { stationId: 'ST007', stationName: 'Flying V Sta. Cruz', address: 'Sta. Cruz, Zamboanga City', distance: 2200, basePrice: 5800, trend: '▼', priceHistory: [5900, 5875, 5850, 5825, 5800] },
+                { stationId: 'ST008', stationName: 'Unioil Tumaga', address: 'Tumaga, Zamboanga City', distance: 3600, basePrice: 5925, trend: '▲', priceHistory: [5850, 5875, 5900, 5925, 5950] },
+                { stationId: 'ST009', stationName: 'PTT Mercedes', address: 'Mercedes, Zamboanga City', distance: 4500, basePrice: 5850, trend: '→', priceHistory: [5850, 5850, 5850, 5850, 5850] },
+                { stationId: 'ST010', stationName: 'Philippine Energy Divisoria', address: 'Divisoria, Zamboanga City', distance: 1200, basePrice: 5825, trend: '▼', priceHistory: [5900, 5875, 5850, 5825, 5800] }
+            ];
+            renderStations();
+            updateStats();
+            lastUpdatedEl.textContent = new Date().toLocaleString();
+        }
+
+        function renderStations() {
+            const fuelType = fuelTypeSelect.value;
+            const liters = parseInt(litersInput.value) || 10;
+            const vehicleType = vehicleTypeSelect.value;
+            const sortMode = sortModeSelect.value;
+            const kmPerLiter = vehicleEfficiency[vehicleType];
+
+            let displayStations = [...stations];
+
+            // Calculate true cost for each station
+            displayStations = displayStations.map(station => {
+                const fuelCost = (station.basePrice * liters) / 100;
+                const travelCost = (station.distance / 1000) / kmPerLiter * 60; // Assuming ₱60/L for travel
+                const trueCost = fuelCost + travelCost;
+                return { ...station, trueCost };
+            });
+
+            // Sort based on selected mode
+            if (sortMode === 'CHEAPEST') {
+                displayStations.sort((a, b) => a.basePrice - b.basePrice);
+            } else if (sortMode === 'NEAREST') {
+                displayStations.sort((a, b) => a.distance - b.distance);
+            } else if (sortMode === 'TRUE_COST') {
+                displayStations.sort((a, b) => a.trueCost - b.trueCost);
+            }
+
+            stationsGrid.innerHTML = displayStations.map((station, index) => {
+                const priceFormatted = (station.basePrice / 100).toFixed(2);
+                const distanceFormatted = (station.distance / 1000).toFixed(2);
+                const trueCostFormatted = (station.trueCost || 0).toFixed(2);
+                const trendClass = station.trend === '▲' ? 'trend-up' : station.trend === '▼' ? 'trend-down' : 'trend-stable';
+
+                return `
+                    <div class="station-card">
+                        <div class="station-rank">#${index + 1}</div>
+                        <div class="station-header">
+                            <h3 class="station-name">${station.stationName}</h3>
+                            <span class="station-trend ${trendClass}">${station.trend}</span>
+                        </div>
+                        <p class="station-address">${station.address}</p>
+                        <div class="station-details">
+                            <div class="detail-item">
+                                <span class="detail-label">Base Price:</span>
+                                <span class="detail-value">₱${priceFormatted}</span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">Distance:</span>
+                                <span class="detail-value">${distanceFormatted} km</span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">True Cost:</span>
+                                <span class="detail-value highlight">₱${trueCostFormatted}</span>
+                            </div>
+                        </div>
+                        <div class="price-history">
+                            <span class="history-label">5-Week Trend:</span>
+                            <div class="history-bars">
+                                ${station.priceHistory.map((price, i) => {
+                                    const height = ((price - 5750) / 200) * 100;
+                                    return `<div class="history-bar" style="height: ${Math.max(10, height)}%" title="Week ${i + 1}: ₱${(price/100).toFixed(2)}"></div>`;
+                                }).join('')}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            stationCountEl.textContent = stations.length;
+            const cheapest = Math.min(...stations.map(s => s.basePrice));
+            cheapestPriceEl.textContent = `₱${(cheapest / 100).toFixed(2)}`;
+        }
+
+        function updateStats() {
+            stationCountEl.textContent = stations.length;
+            if (stations.length > 0) {
+                const cheapest = Math.min(...stations.map(s => s.basePrice));
+                cheapestPriceEl.textContent = `₱${(cheapest / 100).toFixed(2)}`;
+            }
+        }
+
+        function sortStations() {
+            if (stations.length === 0) {
+                alert('Please update prices first!');
+                return;
+            }
+
+            const sortMode = sortModeSelect.value;
+            const fuelType = fuelTypeSelect.value;
+
+            // Generate radix sort visualization data
+            generateRadixSortSnapshots(sortMode);
+
+            currentSnapshotIndex = 0;
+            renderSnapshot();
+            enableVisualizationControls();
+        }
+
+        function generateRadixSortSnapshots(sortMode) {
+            sortSnapshots = [];
+            const stationsCopy = [...stations];
+
+            // Get values to sort based on mode
+            let values;
+            if (sortMode === 'CHEAPEST') {
+                values = stationsCopy.map(s => s.basePrice);
+            } else if (sortMode === 'NEAREST') {
+                values = stationsCopy.map(s => s.distance);
+            } else {
+                const liters = parseInt(litersInput.value) || 10;
+                const vehicleType = vehicleTypeSelect.value;
+                const kmPerLiter = vehicleEfficiency[vehicleType];
+                values = stationsCopy.map(s => {
+                    const fuelCost = (s.basePrice * liters) / 100;
+                    const travelCost = (s.distance / 1000) / kmPerLiter * 60;
+                    return Math.round((fuelCost + travelCost) * 100);
+                });
+            }
+
+            // LSD Radix Sort with snapshot generation
+            const max = Math.max(...values);
+            const maxDigits = Math.floor(Math.log10(max)) + 1;
+
+            let currentArray = [...values];
+            let currentStations = [...stationsCopy];
+
+            // Initial state
+            sortSnapshots.push({
+                pass: 0,
+                digitPosition: 0,
+                buckets: {},
+                currentArray: currentStations.map((s, i) => ({ ...s, sortValue: currentArray[i] }))
+            });
+
+            for (let digitPos = 0; digitPos < maxDigits; digitPos++) {
+                const buckets = {};
+                for (let i = 0; i < 10; i++) {
+                    buckets[i] = {};
+                }
+
+                // Distribute to buckets
+                currentArray.forEach((val, idx) => {
+                    const digit = Math.floor(val / Math.pow(10, digitPos)) % 10;
+                    if (!buckets[digit].items) buckets[digit].items = [];
+                    buckets[digit].items.push({ ...currentStations[idx], sortValue: val });
+                });
+
+                // Collect from buckets (ascending)
+                let newArray = [];
+                let newStations = [];
+                for (let i = 0; i < 10; i++) {
+                    if (buckets[i].items) {
+                        buckets[i].items.forEach(item => {
+                            newArray.push(item.sortValue);
+                            newStations.push(item);
+                        });
+                    }
+                }
+
+                // Save snapshot before collection
+                sortSnapshots.push({
+                    pass: digitPos + 1,
+                    digitPosition: digitPos,
+                    buckets: buckets,
+                    currentArray: currentStations.map((s, i) => ({ ...s, sortValue: currentArray[i] }))
+                });
+
+                currentArray = newArray;
+                currentStations = newStations;
+            }
+
+            // Final sorted state
+            sortSnapshots.push({
+                pass: maxDigits + 1,
+                digitPosition: maxDigits,
+                buckets: {},
+                currentArray: currentStations.map((s, i) => ({ ...s, sortValue: currentArray[i] }))
+            });
+
+            totalPassesEl.textContent = sortSnapshots.length - 1;
+        }
+
+        function renderSnapshot() {
+            const snapshot = sortSnapshots[currentSnapshotIndex];
+            currentPassEl.textContent = snapshot.pass;
+
+            // Render buckets
+            if (Object.keys(snapshot.buckets).length > 0) {
+                bucketsContainer.innerHTML = '';
+                for (let i = 0; i < 10; i++) {
+                    const bucketItems = snapshot.buckets[i]?.items || [];
+                    const bucketHtml = `
+                        <div class="bucket">
+                            <div class="bucket-header">Bucket ${i}</div>
+                            <div class="bucket-items">
+                                ${bucketItems.map(item => `
+                                    <div class="bucket-item">
+                                        <span class="item-name">${item.stationName}</span>
+                                        <span class="item-value">${item.sortValue}</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `;
+                    bucketsContainer.innerHTML += bucketHtml;
+                }
+            } else {
+                bucketsContainer.innerHTML = '<div class="visualizer-placeholder">Initial state - no buckets yet</div>';
+            }
+
+            // Render current array
+            arrayDisplay.innerHTML = snapshot.currentArray.map(item => `
+                <div class="array-item">
+                    <span class="array-item-name">${item.stationName}</span>
+                    <span class="array-item-value">${item.sortValue}</span>
+                </div>
+            `).join('');
+        }
+
+        function showPreviousPass() {
+            if (currentSnapshotIndex > 0) {
+                currentSnapshotIndex--;
+                renderSnapshot();
+            }
+        }
+
+        function showNextPass() {
+            if (currentSnapshotIndex < sortSnapshots.length - 1) {
+                currentSnapshotIndex++;
+                renderSnapshot();
+            }
+        }
+
+        function togglePlay() {
+            if (isPlaying) {
+                stopPlay();
+            } else {
+                startPlay();
+            }
+        }
+
+        function startPlay() {
+            isPlaying = true;
+            playBtn.textContent = '⏸ Pause';
+            playInterval = setInterval(() => {
+                if (currentSnapshotIndex < sortSnapshots.length - 1) {
+                    currentSnapshotIndex++;
+                    renderSnapshot();
+                } else {
+                    stopPlay();
+                }
+            }, 1500);
+        }
+
+        function stopPlay() {
+            isPlaying = false;
+            playBtn.textContent = '▶ Play';
+            if (playInterval) {
+                clearInterval(playInterval);
+                playInterval = null;
+            }
+        }
+
+        function resetVisualization() {
+            stopPlay();
+            currentSnapshotIndex = 0;
+            renderSnapshot();
+        }
+
+        function enableVisualizationControls() {
+            prevPassBtn.disabled = false;
+            nextPassBtn.disabled = false;
+            playBtn.disabled = false;
+            resetBtn.disabled = false;
+        }
+
+        // Re-render when controls change
+        fuelTypeSelect.addEventListener('change', () => {
+            if (stations.length > 0) renderStations();
+        });
+
+        litersInput.addEventListener('change', () => {
+            if (stations.length > 0) renderStations();
+        });
+
+        vehicleTypeSelect.addEventListener('change', () => {
+            if (stations.length > 0) renderStations();
+        });
+
+        sortModeSelect.addEventListener('change', () => {
+            if (stations.length > 0) renderStations();
+        });
+
+        // Load mock data on initial load for demo
+        loadMockData();
+    </script>
+</body>
+</html>
